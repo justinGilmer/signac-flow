@@ -12,6 +12,9 @@ from . import environment
 from . import scheduler
 from . import manage
 from .project import FlowProject
+from .project import label
+from .project import classlabel
+from .project import staticlabel
 from .graph import FlowGraph
 
 __version__ = '0.3.3'
@@ -20,6 +23,9 @@ __all__ = [
     'environment',
     'scheduler',
     'manage',
-    'FlowProject'
+    'FlowProject',
+    'label',
+    'classlabel',
+    'staticlabel',
     'FlowGraph',
 ]
