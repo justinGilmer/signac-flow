@@ -57,17 +57,28 @@ def _update_status(args):
     return manage.update_status(* args)
 
 
-def label(func):
-    func._label = True
-    return func
+class label(object):
+
+    def __init__(self, name=None):
+        self.name = name
+
+    def __call__(self, func):
+        func._label = True
+        if self.name is not None:
+            func._label_name = self.name
+        return func
 
 
-def staticlabel(func):
-    return staticmethod(label(func))
+class staticlabel(label):
+
+    def __call__(self, func):
+        return staticmethod(super(staticlabel, self).__call__(func))
 
 
-def classlabel(func):
-    return classmethod(label(func))
+class classlabel(label):
+
+    def __call__(self, func):
+        return classmethod(super(classlabel, self).__call__(func))
 
 
 def _is_label_func(func):
@@ -702,9 +713,9 @@ class FlowProject(with_metaclass(_FlowProjectClass, signac.contrib.Project)):
             if hasattr(label, '__func__'):
                 label = getattr(cls, label.__func__.__name__)
                 if label(job):
-                    yield label.__name__
+                    yield getattr(label, '_label_name', label.__name__)
             elif label(cls, job):
-                yield label.__name__
+                yield getattr(label, '_label_name', label.__name__)
 
     def classify(self, job):
         """Generator function which yields labels for job.
