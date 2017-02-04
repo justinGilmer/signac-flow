@@ -69,10 +69,11 @@ class SlurmJob(ClusterJob):
 class SlurmScheduler(Scheduler):
     submit_cmd = ['sbatch']
 
-    def __init__(self, user=None, header=None, cores_per_node=None):
+    def __init__(self, user=None, header=None, cores_per_node=None, ppn_specified=False):
         self.header = header
         self.cores_per_node = cores_per_node
         self.user = user
+        self.ppn_specified = ppn_specified
 
     def jobs(self):
         self._prevent_dos()
@@ -90,8 +91,13 @@ class SlurmScheduler(Scheduler):
         submit_script.write('\n')
         submit_script.write(script.read())
         submit_script.seek(0)
-        submit = submit_script.read().format(
-            np=np, nn=num_nodes, walltime=format_timedelta(walltime), jobsid=jobsid)
+        if self.ppn_specified:
+            # If the ppn argument is specified, we modify the job script to explicitly specify how many processors we want for each node
+            submit = submit_script.read().format(
+                np=np, nn=num_nodes, cpn=cores_per_node, walltime=format_timedelta(walltime), jobsid=jobsid)
+        else:
+            submit = submit_script.read().format(
+                np=np, nn=num_nodes, walltime=format_timedelta(walltime), jobsid=jobsid)
         if pretend:
             print("#\n# Pretend to submit:\n")
             print(submit, "\n")
