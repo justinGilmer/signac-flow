@@ -79,7 +79,7 @@ class SlurmScheduler(Scheduler):
                after=None, pretend=False, *args, **kwargs):
         submit_script = io.StringIO()
         if nn is not None and ppn is not None:
-            num_nodes = nn
+            num_nodes = int(np / ppn) # We divide rather than taking nn directly to allow for bundled jobs
             if (np / (nn*self.cores_per_node)) < 0.9:
                 logger.warning("Bad node utilization!")
         else:
