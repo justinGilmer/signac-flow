@@ -69,7 +69,7 @@ class SlurmJob(ClusterJob):
 class SlurmScheduler(Scheduler):
     submit_cmd = ['sbatch']
 
-    def __init__(self, user=None, header=None, cores_per_node=None, ppn_specified=False):
+    def __init__(self, user=None, header=None, cores_per_node=None):
         self.header = header
         self.cores_per_node = cores_per_node
         self.user = user

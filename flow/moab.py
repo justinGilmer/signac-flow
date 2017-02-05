@@ -68,12 +68,11 @@ class MoabJob(ClusterJob):
 class MoabScheduler(Scheduler):
     submit_cmd = ['qsub']
 
-    def __init__(self, root=None, user=None, header=None, cores_per_node=None, ppn_specified=False):
+    def __init__(self, root=None, user=None, header=None, cores_per_node=None):
         self.user = user
         self.root = root
         self.header = header
         self.cores_per_node = cores_per_node
-        self.ppn_specified = ppn_specified
 
     def jobs(self):
         self._prevent_dos()
@@ -81,22 +80,27 @@ class MoabScheduler(Scheduler):
         for node in nodes.findall('Job'):
             yield MoabJob(node)
 
-    def submit(self, jobsid, np, walltime, script, resume=None, 
+    def submit(self, jobsid, np, nn, ppn, walltime, script, resume=None, 
                after=None, pretend=False, hold=False, *args, **kwargs):
         submit_script = io.StringIO()
-        num_nodes = math.ceil(np / self.cores_per_node)
-        if (np / (num_nodes * self.cores_per_node)) < 0.9:
-            logger.warning("Bad node utilization!")
+        if nn is not None and ppn is not None:
+            num_nodes = nn
+            if (np / (nn*self.cores_per_node)) < 0.9:
+                logger.warning("Bad node utilization!")
+        else:
+            num_nodes = math.ceil(np / self.cores_per_node)
+            if (np / (num_nodes * self.cores_per_node)) < 0.9:
+                logger.warning("Bad node utilization!")
 
         submit_script.write(self.header.format(
             jobsid=jobsid, nn=num_nodes, walltime=format_timedelta(walltime)))
         submit_script.write('\n')
         submit_script.write(script.read())
         submit_script.seek(0)
-        if self.ppn_specified:
-            # If the ppn argument is specified, we modify the job script to explicitly specify how many processors we want for each node
+        if nn is not None and ppn is not None:
+            # If the ppn argument is specified, we modify the job script to explicitly specify how many processors we want for each node. This is a bit hackish, but since ppn is a feature attached to nodes on Moab schedulers this is a reasonable solution
             submit = submit_script.read().format(
-                np="{num_nodes}:ppn={ppn}".format(num_nodes=num_nodes, ppn=self.cores_per_node), 
+                np="{num_nodes}:ppn={ppn}".format(num_nodes=num_nodes, ppn=ppn), 
                 nn=num_nodes, walltime=format_timedelta(walltime), jobsid=jobsid)
         else:
             submit = submit_script.read().format(
