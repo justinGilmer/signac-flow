@@ -70,30 +70,29 @@ class SlurmScheduler(Scheduler):
         self.header = header
         self.cores_per_node = cores_per_node
         self.user = user
-        self.ppn_specified = ppn_specified
 
     def jobs(self):
         for job in _fetch(user=self.user):
             yield job
 
-    def submit(self, jobsid, np, walltime, script, resume=None,
+    def submit(self, jobsid, np, nn, ppn, walltime, script, resume=None,
                after=None, pretend=False, *args, **kwargs):
         submit_script = io.StringIO()
-        num_nodes = math.ceil(np / self.cores_per_node)
-        if (np / (num_nodes * self.cores_per_node)) < 0.9:
-            logger.warning("Bad node utilization!")
+        if nn is not None and ppn is not None:
+            num_nodes = nn
+            if (np / (nn*self.cores_per_node)) < 0.9:
+                logger.warning("Bad node utilization!")
+        else:
+            num_nodes = math.ceil(np / self.cores_per_node)
+            if (np / (num_nodes * self.cores_per_node)) < 0.9:
+                logger.warning("Bad node utilization!")
         submit_script.write(self.header.format(
             jobsid=jobsid, nn=num_nodes, walltime=format_timedelta(walltime)))
         submit_script.write('\n')
         submit_script.write(script.read())
         submit_script.seek(0)
-        if self.ppn_specified:
-            # If the ppn argument is specified, we modify the job script to explicitly specify how many processors we want for each node
-            submit = submit_script.read().format(
-                np=np, nn=num_nodes, cpn=cores_per_node, walltime=format_timedelta(walltime), jobsid=jobsid)
-        else:
-            submit = submit_script.read().format(
-                np=np, nn=num_nodes, walltime=format_timedelta(walltime), jobsid=jobsid)
+        submit = submit_script.read().format(
+                np=np, nn=num_nodes, cpn=self.cores_per_node if ppn is None else ppn, walltime=format_timedelta(walltime), jobsid=jobsid)
         if pretend:
             print("#\n# Pretend to submit:\n")
             print(submit, "\n")
