@@ -80,7 +80,7 @@ class MoabScheduler(Scheduler):
         for node in nodes.findall('Job'):
             yield MoabJob(node)
 
-    def submit(self, jobsid, np, nn, ppn, walltime, script, resume=None, 
+    def submit(self, jobsid, np, nn = None, ppn = None, walltime, script, resume=None, 
                after=None, pretend=False, hold=False, *args, **kwargs):
         submit_script = io.StringIO()
         if nn is not None and ppn is not None:
