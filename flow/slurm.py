@@ -79,7 +79,7 @@ class SlurmScheduler(Scheduler):
         for job in _fetch(user=self.user):
             yield job
 
-    def submit(self, jobsid, np, nn = None, ppn = None, walltime, script, resume=None,
+    def submit(self, jobsid, np, walltime, script, nn = None, ppn = None, resume=None,
                after=None, pretend=False, *args, **kwargs):
         submit_script = io.StringIO()
         if nn is not None and ppn is not None:
