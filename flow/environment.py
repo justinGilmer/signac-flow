@@ -10,7 +10,10 @@ from __future__ import print_function
 import re
 import socket
 import logging
+import io
+import math
 from signac.common.six import with_metaclass
+from . import scheduler
 
 
 logger = logging.getLogger(__name__)
@@ -18,6 +21,11 @@ logger = logging.getLogger(__name__)
 MODE_CPU = 'cpu'
 MODE_GPU = 'gpu'
 
+def format_timedelta(delta):
+    hours, r = divmod(delta.seconds, 3600)
+    minutes, seconds = divmod(r, 60)
+    hours += delta.days * 24
+    return "{:0>2}:{:0>2}:{:0>2}".format(hours, minutes, seconds)
 
 class ComputeEnvironmentType(type):
 
@@ -46,10 +54,46 @@ class ComputeEnvironment(with_metaclass(ComputeEnvironmentType)):
                 cls.hostname_pattern, socket.gethostname()) is not None
 
     @classmethod
-    def submit(cls, jobsid, np, walltime, script,
-               pretend=False, *args, **kwargs):
-        raise NotImplementedError()
+    def submit(cls, jobsid, np, walltime, script, nn = None, ppn = None, test = False, db = None,
+               *args, **kwargs):
+        submit_script = io.StringIO()
+        if nn is not None and ppn is not None:
+            num_nodes = int(np / ppn) # We divide rather than taking nn directly to allow for bundled jobs
+            if (np / (nn*cls.available_cores_per_node_cpu)) < 0.9:
+                logger.warning("Bad node utilization!")
+        else:
+            num_nodes = math.ceil(np / cls.available_cores_per_node_cpu)
+            if (np / (num_nodes * cls.available_cores_per_node_cpu)) < 0.9:
+                logger.warning("Bad node utilization!")
 
+        submit_script.write(cls.header.format(
+            jobsid=jobsid, nn=num_nodes, walltime=format_timedelta(walltime)))
+        submit_script.write('\n')
+        submit_script.write(script.read())
+        submit_script.seek(0)
+        if nn is not None and ppn is not None:
+            # If the ppn argument is specified, we modify the job script to explicitly specify how many processors we want for each node. This is a bit hackish, but since ppn is a feature attached to nodes on Moab schedulers this is a reasonable solution
+            submit = submit_script.read().format(
+                np="{num_nodes}:ppn={ppn}".format(num_nodes=num_nodes, ppn=ppn), 
+                nn=num_nodes, walltime=format_timedelta(walltime), jobsid=jobsid)
+        else:
+            submit = submit_script.read().format(
+                np=np, nn=num_nodes,
+                walltime=format_timedelta(walltime), jobsid=jobsid)
+
+        # Hand off the actual submission to the scheduler
+        scheduler = cls.get_scheduler(test, db)
+        return scheduler.submit(submit, *args, **kwargs)
+
+    @classmethod
+    def get_scheduler(cls, test = False, db = None, **kwargs):
+        if test:
+            return scheduler.APScheduler(db = db)
+        try:
+            sched = getattr(cls, 'scheduler_type')(**kwargs)
+            return sched
+        except AttributeError:
+            raise AttributeError("You must define a scheduler type for every environment")
 
 class UnknownEnvironment(ComputeEnvironment):
     pass
@@ -61,11 +105,11 @@ class TestEnvironment(ComputeEnvironment):
 
 class MoabEnvironment(ComputeEnvironment):
     submit_cmd = ['qsub']
-    cores_per_node = None
+    scheduler_type = scheduler.MoabScheduler
 
 
 class SlurmEnvironment(ComputeEnvironment):
-    cores_per_node = None
+    scheduler_type = scheduler.SlurmScheduler
 
 
 class CPUEnvironment(ComputeEnvironment):

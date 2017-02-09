@@ -283,7 +283,7 @@ class FlowProject(with_metaclass(_FlowProjectClass, signac.contrib.Project)):
                                "and job type '{}'.".format(job, operation))
         return ret
 
-    def _submit(self, scheduler, to_submit, pretend,
+    def _submit(self, env, to_submit, pretend,
                 serial, bundle, after, walltime, **kwargs):
         "Submit jobs to the scheduler."
         script = JobScript()
@@ -323,7 +323,7 @@ class FlowProject(with_metaclass(_FlowProjectClass, signac.contrib.Project)):
             sid = self._store_bundled(jobids_bundled)
         else:
             sid = jobsid
-        scheduler_job_id = scheduler.submit(
+        scheduler_job_id = env.submit(
             script=script, jobsid=sid,
             np=np_total, walltime=walltime, pretend=pretend, **kwargs)
         logger.info("Submitted {}.".format(sid))
@@ -357,7 +357,7 @@ class FlowProject(with_metaclass(_FlowProjectClass, signac.contrib.Project)):
         return ((j, jt) for j, jt in to_submit
                 if self._eligible(j, jt, **kwargs))
 
-    def submit_jobs(self, scheduler, to_submit, walltime=None,
+    def submit_jobs(self, env, to_submit, walltime=None,
                     bundle=None, serial=False, after=None,
                     num=None, pretend=False, force=False, **kwargs):
         """Submit jobs to the scheduler.
@@ -392,17 +392,17 @@ class FlowProject(with_metaclass(_FlowProjectClass, signac.contrib.Project)):
             n = None if bundle == 0 else bundle
             while True:
                 ts = islice(to_submit, n)
-                if not self._submit(scheduler, ts, walltime=walltime,
+                if not self._submit(env, ts, walltime=walltime,
                                     bundle=bundle, serial=serial, after=after,
                                     num=num, pretend=pretend, force=force, **kwargs):
                     break
         else:
             for ts in to_submit:
-                self._submit(scheduler, [ts], walltime=walltime,
+                self._submit(env, [ts], walltime=walltime,
                              bundle=bundle, serial=serial, after=after,
                              num=num, pretend=pretend, force=force, **kwargs)
 
-    def submit(self, scheduler, job_ids=None,
+    def submit(self, env, job_ids=None,
                operation=None, job_filter=None, **kwargs):
         """Wrapper for :meth:`~.to_submit` and :meth:`~.submit_jobs`.
 
@@ -422,7 +422,7 @@ class FlowProject(with_metaclass(_FlowProjectClass, signac.contrib.Project)):
         if job_ids is not None and not len(job_ids):
             job_ids = None
         return self.submit_jobs(
-            scheduler=scheduler,
+            env=env,
             to_submit=self.to_submit(job_ids, operation, job_filter),
             **kwargs)
 
