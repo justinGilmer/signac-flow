@@ -39,10 +39,12 @@ class ComputeEnvironment(with_metaclass(ComputeEnvironmentType)):
 
     def __init__(self, mode=None):
         if mode == None:
+            # Make this more flexible e.g. just have a cls.default_mode
             mode = type(self).modes['MODE_CPU']
         if mode not in self.modes.values():
             raise ValueError(mode)
         self.mode = mode
+        self.cores_per_node = type(self).available_cores_per_node[self.mode]
 
     @classmethod
     def is_present(cls):
@@ -52,16 +54,16 @@ class ComputeEnvironment(with_metaclass(ComputeEnvironmentType)):
             return re.match(
                 cls.hostname_pattern, socket.gethostname()) is not None
 
-    def submit(self, jobsid, np, walltime, script, nn = None, ppn = None, test = False, db = None,
+    def submit(self, jobsid, np, nn, ppn, walltime, script, test = False, db = None,
                *args, **kwargs):
         submit_script = io.StringIO()
         if nn is not None and ppn is not None:
             num_nodes = int(np / ppn) # We divide rather than taking nn directly to allow for bundled jobs
-            if (np / (nn*type(self).available_cores_per_node[self.mode])) < 0.9:
+            if (np / (nn*self.cores_per_node)) < 0.9:
                 logger.warning("Bad node utilization!")
         else:
-            num_nodes = math.ceil(np / type(self).available_cores_per_node[self.mode])
-            if (np / (num_nodes * type(self).available_cores_per_node[self.mode])) < 0.9:
+            num_nodes = math.ceil(np / self.cores_per_node)
+            if (np / (num_nodes * self.cores_per_node)) < 0.9:
                 logger.warning("Bad node utilization!")
 
         submit_script.write(self.get_header().format(

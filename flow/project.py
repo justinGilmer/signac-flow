@@ -283,7 +283,32 @@ class FlowProject(with_metaclass(_FlowProjectClass, signac.contrib.Project)):
                                "and job type '{}'.".format(job, operation))
         return ret
 
-    def _submit(self, env, to_submit, pretend,
+    def to_submit(self, job_ids=None, operation=None, job_filter=None):
+        """Generate a sequence of (job_id, operation) value pairs for submission.
+
+        :param job_ids: A list of job_id's,
+            defaults to all jobs found in the workspace.
+        :param operation: A specific operation,
+            defaults to the result of :meth:`~.next_operation`.
+        :param job_filter: A JSON encoded filter,
+            that all jobs to be submitted need to match."""
+        if job_ids is None:
+            jobs = list(self.find_jobs(job_filter))
+        else:
+            jobs = [self.open_job(id=jobid) for jobid in job_ids]
+        if operation is None:
+            operations = (self.next_operation(job) for job in jobs)
+        else:
+            operations = [operation] * len(jobs)
+        return zip(jobs, operations)
+
+    def filter_non_eligible(self, to_submit, **kwargs):
+        "Return only those jobs for submittal, which are eligible."
+        return ((j, jt) for j, jt in to_submit
+                if self._eligible(j, jt, **kwargs))
+
+
+     def _submit(self, scheduler, to_submit, pretend,
                 serial, bundle, after, walltime, **kwargs):
         "Submit jobs to the scheduler."
         script = JobScript()
@@ -323,7 +348,7 @@ class FlowProject(with_metaclass(_FlowProjectClass, signac.contrib.Project)):
             sid = self._store_bundled(jobids_bundled)
         else:
             sid = jobsid
-        scheduler_job_id = env.submit(
+        scheduler_job_id = scheduler.submit(
             script=script, jobsid=sid,
             np=np_total, walltime=walltime, pretend=pretend, **kwargs)
         logger.info("Submitted {}.".format(sid))
@@ -333,38 +358,66 @@ class FlowProject(with_metaclass(_FlowProjectClass, signac.contrib.Project)):
             after = ':'.join(after.split(':') + [scheduler_job_id])
         return True
 
-    def to_submit(self, job_ids=None, operation=None, job_filter=None):
-        """Generate a sequence of (job_id, operation) value pairs for submission.
+    def submit_jobs(self, scheduler, to_submit, walltime=None,
+                     bundle=None, serial=False, after=None,
+                     num=None, pretend=False, force=False, **kwargs):
+         """Submit jobs to the scheduler.
+ 
+         :param scheduler: The scheduler instance.
+         :type scheduler: :class:`~.flow.manage.Scheduler`
+         :param to_submit: A sequence of (job_id, operation) tuples.
+         :param walltime: The maximum wallclock time in hours.
+         :type walltime: float
+         :param bundle: Bundle up to 'bundle' number of jobs during submission.
+         :type bundle: int
+         :param serial: Schedule jobs in serial or execute bundled
+             jobs in serial.
+         :type serial: bool
+         :param after: Execute all jobs after the completion of the job operation
+             with this job session id. Implementation is scheduler dependent.
+         :type after: str
+         :param num: Do not submit more than 'num' jobs to the scheduler.
+         :type num: int
+         :param pretend: Do not actually submit, but instruct the scheduler
+             to pretend scheduling.
+         :type pretend: bool
+         :param force: Ignore all eligibility checks, just submit.
+         :type force: bool
+         :param kwargs: Other keyword arguments which are forwareded."""
+         if walltime is not None:
+             walltime = datetime.timedelta(hours=walltime)
+         if not force:
+             to_submit = self.filter_non_eligible(to_submit, **kwargs)
+         to_submit = islice(to_submit, num)
+         if bundle is not None:
+             n = None if bundle == 0 else bundle
+             while True:
+                 ts = islice(to_submit, n)
+                 if not self._submit(scheduler, ts, walltime=walltime,
+                                     bundle=bundle, serial=serial, after=after,
+                                     num=num, pretend=pretend, force=force, **kwargs):
+                     break
+         else:
+             for ts in to_submit:
+                 self._submit(scheduler, [ts], walltime=walltime,
+                              bundle=bundle, serial=serial, after=after,
+                              num=num, pretend=pretend, force=force, **kwargs)
+   
 
-        :param job_ids: A list of job_id's,
-            defaults to all jobs found in the workspace.
-        :param operation: A specific operation,
-            defaults to the result of :meth:`~.next_operation`.
-        :param job_filter: A JSON encoded filter,
-            that all jobs to be submitted need to match."""
-        if job_ids is None:
-            jobs = list(self.find_jobs(job_filter))
-        else:
-            jobs = [self.open_job(id=jobid) for jobid in job_ids]
-        if operation is None:
-            operations = (self.next_operation(job) for job in jobs)
-        else:
-            operations = [operation] * len(jobs)
-        return zip(jobs, operations)
-
-    def filter_non_eligible(self, to_submit, **kwargs):
-        "Return only those jobs for submittal, which are eligible."
-        return ((j, jt) for j, jt in to_submit
-                if self._eligible(j, jt, **kwargs))
-
-    def submit_jobs(self, env, to_submit, walltime=None,
+    def submit(self, env, job_ids=None, operation=None,job_filter=None,
+                    walltime=None, nn = None, nc = None, ppn = None,
                     bundle=None, serial=False, after=None,
                     num=None, pretend=False, force=False, **kwargs):
         """Submit jobs to the scheduler.
 
         :param scheduler: The scheduler instance.
         :type scheduler: :class:`~.flow.manage.Scheduler`
-        :param to_submit: A sequence of (job_id, operation) tuples.
+        :param job_ids: A list of job_id's,
+            defaults to all jobs found in the workspace.
+        :param operation: A specific operation,
+            defaults to the result of :meth:`~.next_operation`.
+        :param job_filter: A JSON encoded filter that all jobs
+            to be submitted need to match.
         :param walltime: The maximum wallclock time in hours.
         :type walltime: float
         :param bundle: Bundle up to 'bundle' number of jobs during submission.
@@ -383,48 +436,87 @@ class FlowProject(with_metaclass(_FlowProjectClass, signac.contrib.Project)):
         :param force: Ignore all eligibility checks, just submit.
         :type force: bool
         :param kwargs: Other keyword arguments which are forwareded."""
+
+        if job_ids is not None and not len(job_ids):
+            job_ids = None
+        jobs_to_submit = self.to_submit(job_ids, operation, job_filter)
         if walltime is not None:
             walltime = datetime.timedelta(hours=walltime)
         if not force:
-            to_submit = self.filter_non_eligible(to_submit, **kwargs)
-        to_submit = islice(to_submit, num)
-        if bundle is not None:
-            n = None if bundle == 0 else bundle
-            while True:
-                ts = islice(to_submit, n)
-                if not self._submit(env, ts, walltime=walltime,
-                                    bundle=bundle, serial=serial, after=after,
-                                    num=num, pretend=pretend, force=force, **kwargs):
-                    break
+            jobs_to_submit = self.filter_non_eligible(jobs_to_submit, **kwargs)
+        jobs_to_submit = islice(jobs_to_submit, num)
+
+
+        # Will have to do some logic inside the while loop depending on what np_total is, but we can do most things out here
+        if nc:
+            if nn or ppn:
+                raise ValueError('You cannot specify nn or ppn if nc is specified')
+        elif nn:
+            if not ppn:
+                logger.warning(
+                    "nn specified without ppn. Assuming total core allocation.")
+                ppn = env.cores_per_node
+            nc = ppn * nn
+        elif ppn:
+            logger.warning(
+                "ppn specified without nn. Assuming that all cores should be allocated on 1 node.")
+            nn = 1
+            nc = ppn
         else:
-            for ts in to_submit:
-                self._submit(env, [ts], walltime=walltime,
-                             bundle=bundle, serial=serial, after=after,
-                             num=num, pretend=pretend, force=force, **kwargs)
+            nc = 1
 
-    def submit(self, env, job_ids=None,
-               operation=None, job_filter=None, **kwargs):
-        """Wrapper for :meth:`~.to_submit` and :meth:`~.submit_jobs`.
+        n = None if bundle == 0 else bundle
+        while True:
+            ts = islice(jobs_to_submit, n)
+            "Submit jobs to the scheduler."
+            script = JobScript()
+            self.write_header(
+                script=script, walltime=walltime, serial=serial,
+                bundle=bundle, after=after, ** kwargs)
+            jobids_bundled = []
+            np_total = 0
+            for job, operation in jobs_to_submit:
+                jobsid = self._get_jobsid(job, operation)
 
-        This function passes the return value of :meth:`~.to_submit`
-        to :meth:`~.submit_jobs`.
+                def set_status(value):
+                    "Update the job's status dictionary."
+                    status_doc = job.document.get('status', dict())
+                    status_doc[jobsid] = int(value)
+                    job.document['status'] = status_doc
+                    return int(value)
 
-        :param scheduler: The scheduler instance.
-        :type scheduler: :class:`~.flow.manage.Scheduler`
-        :param job_ids: A list of job_id's,
-            defaults to all jobs found in the workspace.
-        :param operation: A specific operation,
-            defaults to the result of :meth:`~.next_operation`.
-        :param job_filter: A JSON encoded filter that all jobs
-            to be submitted need to match.
-        :param kwargs: All other keyword arguments are forwarded
-            to :meth:`~.submit_jobs`."""
-        if job_ids is not None and not len(job_ids):
-            job_ids = None
-        return self.submit_jobs(
-            env=env,
-            to_submit=self.to_submit(job_ids, operation, job_filter),
-            **kwargs)
+                np = self.write_user(
+                    script=script, job=job, operation=operation, nc = nc, nn = nn, ppn = ppn,
+                    parallel=not serial and bundle != 1, **kwargs) # Not sure it matters if we background when there's just one job. Any reason not to?
+                if np is None:
+                    raise RuntimeError(
+                        "Failed to return 'num_procs' value in write_user()!")
+
+                # Is it actually possible to submit multiple jobs in a bundle that have different processor requirements? I guess there might be a way to pull this off with write_user.
+                # We need to keep track of the total number of procs
+                np_total = max(np, np_total) if serial else np_total + np
+                if pretend:
+                    set_status(manage.JobStatus.registered)
+                else:
+                    set_status(manage.JobStatus.submitted)
+                jobids_bundled.append(jobsid)
+            script.write('wait')
+            script.seek(0)
+            if not len(jobids_bundled):
+                break
+
+            if len(jobids_bundled) > 1:
+                sid = self._store_bundled(jobids_bundled)
+            else:
+                sid = jobsid
+            scheduler_job_id = env.submit(
+                script=script, jobsid=sid,
+                np=np_total, nn = nn, ppn = ppn, walltime=walltime, pretend=pretend, **kwargs)
+            logger.info("Submitted {}.".format(sid))
+            if serial and not bundle:
+                if after is None:
+                    after = ''
+                after = ':'.join(after.split(':') + [scheduler_job_id])
 
     @classmethod
     def add_submit_args(cls, parser):
@@ -476,6 +568,7 @@ class FlowProject(with_metaclass(_FlowProjectClass, signac.contrib.Project)):
             type=int,
             nargs='?',
             const=0,
+            default=1,
             help="Specify how many jobs to bundle into one submission. "
                  "Omit a specific value to bundle all eligible jobs.")
         parser.add_argument(
