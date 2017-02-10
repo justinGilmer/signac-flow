@@ -18,9 +18,6 @@ from . import scheduler
 
 logger = logging.getLogger(__name__)
 
-MODE_CPU = 'cpu'
-MODE_GPU = 'gpu'
-
 def format_timedelta(delta):
     hours, r = divmod(delta.seconds, 3600)
     minutes, seconds = divmod(r, 60)
@@ -40,8 +37,10 @@ class ComputeEnvironmentType(type):
 class ComputeEnvironment(with_metaclass(ComputeEnvironmentType)):
     hostname_pattern = None
 
-    def __init__(self, mode=MODE_CPU):
-        if mode not in self.header_scripts.keys():
+    def __init__(self, mode=None):
+        if mode == None:
+            mode = type(self).modes['MODE_CPU']
+        if mode not in self.modes.values():
             raise ValueError(mode)
         self.mode = mode
 
@@ -53,20 +52,19 @@ class ComputeEnvironment(with_metaclass(ComputeEnvironmentType)):
             return re.match(
                 cls.hostname_pattern, socket.gethostname()) is not None
 
-    @classmethod
-    def submit(cls, jobsid, np, walltime, script, nn = None, ppn = None, test = False, db = None,
+    def submit(self, jobsid, np, walltime, script, nn = None, ppn = None, test = False, db = None,
                *args, **kwargs):
         submit_script = io.StringIO()
         if nn is not None and ppn is not None:
             num_nodes = int(np / ppn) # We divide rather than taking nn directly to allow for bundled jobs
-            if (np / (nn*cls.available_cores_per_node_cpu)) < 0.9:
+            if (np / (nn*type(self).available_cores_per_node[self.mode])) < 0.9:
                 logger.warning("Bad node utilization!")
         else:
-            num_nodes = math.ceil(np / cls.available_cores_per_node_cpu)
-            if (np / (num_nodes * cls.available_cores_per_node_cpu)) < 0.9:
+            num_nodes = math.ceil(np / type(self).available_cores_per_node[self.mode])
+            if (np / (num_nodes * type(self).available_cores_per_node[self.mode])) < 0.9:
                 logger.warning("Bad node utilization!")
 
-        submit_script.write(cls.header.format(
+        submit_script.write(type(self).headers[self.mode].format(
             jobsid=jobsid, nn=num_nodes, walltime=format_timedelta(walltime)))
         submit_script.write('\n')
         submit_script.write(script.read())
@@ -82,15 +80,17 @@ class ComputeEnvironment(with_metaclass(ComputeEnvironmentType)):
                 walltime=format_timedelta(walltime), jobsid=jobsid)
 
         # Hand off the actual submission to the scheduler
-        scheduler = cls.get_scheduler(test, db)
+        scheduler = type(self).get_scheduler(test, db)
         return scheduler.submit(submit, *args, **kwargs)
 
     @classmethod
-    def get_scheduler(cls, test = False, db = None, **kwargs):
+    def get_scheduler(cls, test = False, db = None):
         if test:
+            if db is None:
+                db = signac.get_database(str(signac.get_project()))
             return scheduler.APScheduler(db = db)
         try:
-            sched = getattr(cls, 'scheduler_type')(**kwargs)
+            sched = getattr(cls, 'scheduler_type')()
             return sched
         except AttributeError:
             raise AttributeError("You must define a scheduler type for every environment")
@@ -104,14 +104,13 @@ class TestEnvironment(ComputeEnvironment):
 
 
 class MoabEnvironment(ComputeEnvironment):
-    submit_cmd = ['qsub']
     scheduler_type = scheduler.MoabScheduler
 
 
 class SlurmEnvironment(ComputeEnvironment):
     scheduler_type = scheduler.SlurmScheduler
 
-
+'''
 class CPUEnvironment(ComputeEnvironment):
     pass
 
@@ -119,6 +118,7 @@ class CPUEnvironment(ComputeEnvironment):
 class GPUEnvironment(ComputeEnvironment):
     pass
 
+'''
 
 def get_environment():
     for env_type in ComputeEnvironment.registry.values():

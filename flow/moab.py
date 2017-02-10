@@ -58,9 +58,8 @@ class MoabJob(ClusterJob):
 class MoabScheduler(Scheduler):
     submit_cmd = ['qsub']
 
-    def __init__(self, root=None, user=None):
+    def __init__(self, user=None):
         self.user = user
-        self.root = root
 
     def jobs(self):
         self._prevent_dos()
