@@ -70,8 +70,6 @@ class SlurmScheduler(Scheduler):
     submit_cmd = ['sbatch']
 
     def __init__(self, user=None, header=None, cores_per_node=None):
-        self.header = header
-        self.cores_per_node = cores_per_node
         self.user = user
 
     def jobs(self):
@@ -79,24 +77,8 @@ class SlurmScheduler(Scheduler):
         for job in _fetch(user=self.user):
             yield job
 
-    def submit(self, jobsid, np, walltime, script, nn = None, ppn = None, resume=None,
-               after=None, pretend=False, *args, **kwargs):
-        submit_script = io.StringIO()
-        if nn is not None and ppn is not None:
-            num_nodes = int(np / ppn) # We divide rather than taking nn directly to allow for bundled jobs
-            if (np / (nn*self.cores_per_node)) < 0.9:
-                logger.warning("Bad node utilization!")
-        else:
-            num_nodes = math.ceil(np / self.cores_per_node)
-            if (np / (num_nodes * self.cores_per_node)) < 0.9:
-                logger.warning("Bad node utilization!")
-        submit_script.write(self.header.format(
-            jobsid=jobsid, nn=num_nodes, walltime=format_timedelta(walltime)))
-        submit_script.write('\n')
-        submit_script.write(script.read())
-        submit_script.seek(0)
-        submit = submit_script.read().format(
-                np=np, nn=num_nodes, cpn=self.cores_per_node if ppn is None else ppn, walltime=format_timedelta(walltime), jobsid=jobsid)
+    def submit(self, script,
+               resume=None,after=None, pretend=False, hold=False, *args, **kwargs):
         if pretend:
             print("#\n# Pretend to submit:\n")
             print(submit, "\n")

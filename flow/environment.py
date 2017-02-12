@@ -66,8 +66,8 @@ class ComputeEnvironment(with_metaclass(ComputeEnvironmentType)):
             if (np / (num_nodes * self.cores_per_node)) < 0.9:
                 logger.warning("Bad node utilization!")
 
-        submit_script.write(self.get_header().format(
-            jobsid=jobsid, nn=num_nodes, walltime=format_timedelta(walltime)))
+        submit_script.write(self.get_header(jobsid, np, nn, ppn, walltime, script, test, db, args, kwargs).format(
+                                            jobsid=jobsid, nn=num_nodes, walltime=format_timedelta(walltime)))
         submit_script.write('\n')
         submit_script.write(script.read())
         submit_script.seek(0)
@@ -85,6 +85,10 @@ class ComputeEnvironment(with_metaclass(ComputeEnvironmentType)):
         scheduler = type(self).get_scheduler(test, db)
         return scheduler.submit(submit, *args, **kwargs)
 
+    @staticmethod
+    def bg(cmd):
+        return cmd + ' &'
+
     @classmethod
     def get_scheduler(cls, test = False, db = None):
         if test:
@@ -97,7 +101,8 @@ class ComputeEnvironment(with_metaclass(ComputeEnvironmentType)):
         except AttributeError:
             raise AttributeError("You must define a scheduler type for every environment")
 
-    def get_header(self):
+    def get_header(self, jobsid=None, np=None, nn=None, ppn=None, walltime=None, script=None, test = False, db = None,
+                   *args, **kwargs):
         return type(self).headers[self.mode]
 
 class UnknownEnvironment(ComputeEnvironment):
