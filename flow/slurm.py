@@ -54,17 +54,8 @@ def _fetch(user=None):
         if info['euser'].startswith(user):
             yield SlurmJob(info['Job_Name'], parse_status(info['job_state']))
 
-
-def format_timedelta(delta):
-    hours, r = divmod(delta.seconds, 3600)
-    minutes, seconds = divmod(r, 60)
-    hours += delta.days * 24
-    return "{:0>2}:{:0>2}:{:0>2}".format(hours, minutes, seconds)
-
-
 class SlurmJob(ClusterJob):
     pass
-
 
 class SlurmScheduler(Scheduler):
     submit_cmd = ['sbatch']
@@ -81,7 +72,7 @@ class SlurmScheduler(Scheduler):
                resume=None,after=None, pretend=False, hold=False, *args, **kwargs):
         if pretend:
             print("#\n# Pretend to submit:\n")
-            print(submit, "\n")
+            print(script, "\n")
         else:
             submit_cmd = self.submit_cmd
             if after is not None:

@@ -54,32 +54,30 @@ class ComputeEnvironment(with_metaclass(ComputeEnvironmentType)):
             return re.match(
                 cls.hostname_pattern, socket.gethostname()) is not None
 
-    def submit(self, jobsid, np, nn, ppn, walltime, script, test = False, db = None,
+    def submit(self, jobsid=None, np=None, nn=None, ppn=None, bundle=None, walltime=None, script=None, test = False, db = None,
                *args, **kwargs):
         submit_script = io.StringIO()
+
+        if ppn is not None and ppn > self.cores_per_node:
+            raise ValueError("You cannot request more than {cpn} cores per node in this environment".format(cpn=self.cores_per_node))
+        
         if nn is not None and ppn is not None:
-            num_nodes = int(np / ppn) # We divide rather than taking nn directly to allow for bundled jobs
-            if (np / (nn*self.cores_per_node)) < 0.9:
-                logger.warning("Bad node utilization!")
+            num_nodes = int(np / ppn) # Here we can take the integer part since this must be an integer
         else:
-            num_nodes = math.ceil(np / self.cores_per_node)
+            # We need to make sure that the header is provided the appropriate ppn
+            if np < self.cores_per_node:
+                ppn = np
+            else:
+                ppn = self.cores_per_node
+            num_nodes = math.ceil(np / ppn) # We divide rather than taking nn directly to allow for bundled jobs
             if (np / (num_nodes * self.cores_per_node)) < 0.9:
                 logger.warning("Bad node utilization!")
 
-        submit_script.write(self.get_header(jobsid, np, nn, ppn, walltime, script, test, db, args, kwargs).format(
-                                            jobsid=jobsid, nn=num_nodes, walltime=format_timedelta(walltime)))
+        submit_script.write(self.get_header(jobsid, np, num_nodes, ppn, format_timedelta(walltime), args, kwargs))
         submit_script.write('\n')
         submit_script.write(script.read())
         submit_script.seek(0)
-        if nn is not None and ppn is not None:
-            # If the ppn argument is specified, we modify the job script to explicitly specify how many processors we want for each node. This is a bit hackish, but since ppn is a feature attached to nodes on Moab schedulers this is a reasonable solution
-            submit = submit_script.read().format(
-                np="{num_nodes}:ppn={ppn}".format(num_nodes=num_nodes, ppn=ppn), 
-                nn=num_nodes, walltime=format_timedelta(walltime), jobsid=jobsid)
-        else:
-            submit = submit_script.read().format(
-                np=np, nn=num_nodes,
-                walltime=format_timedelta(walltime), jobsid=jobsid)
+        submit = submit_script.read()
 
         # Hand off the actual submission to the scheduler
         scheduler = type(self).get_scheduler(test, db)
@@ -101,9 +99,13 @@ class ComputeEnvironment(with_metaclass(ComputeEnvironmentType)):
         except AttributeError:
             raise AttributeError("You must define a scheduler type for every environment")
 
-    def get_header(self, jobsid=None, np=None, nn=None, ppn=None, walltime=None, script=None, test = False, db = None,
+    def get_header(self, jobsid=None, np=None, nn=None, ppn=None, walltime=None,
                    *args, **kwargs):
-        return type(self).headers[self.mode]
+        # For now this is necessary because the headers all have two braces around everything. We should probably change that though.
+        script_header = type(self).headers[self.mode].format().format(
+                                            jobsid=jobsid, np=np, nn=num_nodes, walltime=walltime)
+        
+
 
 class UnknownEnvironment(ComputeEnvironment):
     pass
