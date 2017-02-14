@@ -93,7 +93,7 @@ def _is_label_func(func):
     return getattr(getattr(func, '__func__', func), '_label', False)
 
 
-def make_bundles(operations, size):
+def make_bundles(operations, size=None):
     n = None if size == 0 else size
     while True:
         b = list(islice(operations, n))
@@ -281,9 +281,8 @@ class FlowProject(with_metaclass(_FlowProjectClass, signac.contrib.Project)):
                     pretend=False, **kwargs):
         raise NotImplementedError()
 
-    def submit(self, env, job_ids=None, operation_name=None, walltime=None, pretend=False,
-               num=None, force=False, bundle_size=1, serial=False, after=None, hold=False,
-               cmd=None, requires=None, **kwargs):
+    def submit(self, env, job_ids=None, operation_name=None, walltime=None,
+               num=None, force=False, bundle_size=1, cmd=None, requires=None, **kwargs):
         """Submit jobs to the scheduler.
 
         :param env: The env instance.
@@ -340,9 +339,16 @@ class FlowProject(with_metaclass(_FlowProjectClass, signac.contrib.Project)):
         operations = islice(operations, num)
 
         for bundle in make_bundles(operations, bundle_size):
-            submit_script = env.script(
-                _id=self._store_bundled(bundle), serial=serial, **kwargs)
-            self.submit_user(submit_script, bundle, walltime=walltime, **kwargs)
+            status = self.submit_user(
+                env=env,
+                _id=self._store_bundled(bundle),
+                operations=bundle,
+                walltime=walltime,
+                force=force,
+                **kwargs)
+            if status:
+                for op in bundle:
+                    op.set_status(status)
 
     @classmethod
     def add_submit_args(cls, parser):
@@ -417,50 +423,6 @@ class FlowProject(with_metaclass(_FlowProjectClass, signac.contrib.Project)):
         for line in sp_dump.splitlines():
             script.write('# ' + line + '\n')
         script.write('\n')
-
-    def write_header(self, script, walltime, env=None, **kwargs):
-        """Write a general jobscript header to the script.
-
-        The header is written only once for each job script, whereas the
-        output of :meth:`~.write_user` may be written multiple times to
-        one job script for bundled jobs.
-
-        :param script: The job script, to write to.
-        :type script: :class:`~.JobScript`
-        :param walltime: The maximum allowed walltime for this operation.
-        :type walltime: :class:`datetime.timedelta`
-
-        The default method writes nothing."""
-        return
-
-    def write_user(self, script, job, operation, parallel, **kwargs):
-        """Write to the jobscript for job and job type."
-
-        This function needs to be specialized for each project.
-        Please note, that all commands should obey the parallel flag, i.e.
-        should be executed in parallel if set to True.
-        You should `assert not parallel` if that is not possible.
-
-        See also: :meth:`~.JobScript.write_cmd`.
-
-        The ``mpi_cmd`` argument should be a callable, with the following
-        signature: ``mpi_cmd(cmd, np, **kwargs)``.
-
-        :param script: The job script, to write to.
-        :type script: :class:`~.JobScript`
-        :param job: The signac job handle.
-        :type job: :class:`signac.contrib.Job`
-        :param operation: The name of the operation to execute.
-        :type operation: str
-        :param parallel: Execute commands in parallel if True.
-        :type parallel: bool
-        :param mpi_cmd: MPI command wrapper. Pass this function
-            to execute mpi commands in multiple environments.
-
-        :returns: The number of required processors (nodes).
-        :rtype: int
-        """
-        raise NotImplementedError()
 
     def print_overview(self, stati, max_lines=None, file=sys.stdout):
         "Print the project's status overview."
