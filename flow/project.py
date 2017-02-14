@@ -327,7 +327,8 @@ class FlowProject(with_metaclass(_FlowProjectClass, signac.contrib.Project)):
         return ((j, jt) for j, jt in to_submit
                 if self._eligible(j, jt, **kwargs))
 
-    def to_submit_cmd(self, job_ids, cmd, requires=None, job_filter=None, **kwargs):
+    def to_submit_cmd(self, cmd, job_ids=None, requires=None, job_filter=None, **kwargs):
+        assert len(cmd.split('\n')) == 1
         if job_ids is None:
             jobs = list(self.find_jobs(job_filter))
         else:
@@ -335,13 +336,9 @@ class FlowProject(with_metaclass(_FlowProjectClass, signac.contrib.Project)):
         if requires is None:
             requires=[];
         for job in jobs:
-            blocked = len(requires) != 0
             labels = list(self.labels(job))
-            if blocked:
-                blocked = not all([req in labels for req in requires])
-            if not blocked:
-                print("adding {} with {}".format(job, labels))
-                yield JobOperation(name='user-cmd', cmd=cmd.format(job), job=job)
+            if all([req in labels for req in requires]):
+                yield (JobOperation(name='user-cmd', cmd=cmd.format(job), job=job), 'user-cmd')
 
     def _submit(self, scheduler, to_submit, pretend,
                 serial, bundle, after, walltime, **kwargs):
@@ -497,8 +494,8 @@ class FlowProject(with_metaclass(_FlowProjectClass, signac.contrib.Project)):
             jobs_to_submit = self.to_submit_cmd(job_ids, cmd, requires, job_filter)
         else:
             jobs_to_submit = self.to_submit(job_ids, operation, job_filter)
-            if not force:
-                jobs_to_submit = self.filter_non_eligible(jobs_to_submit, **kwargs)
+        if not force:
+            jobs_to_submit = self.filter_non_eligible(jobs_to_submit, **kwargs)
         jobs_to_submit = islice(jobs_to_submit, num)
         self.submit_user(env, jobs_to_submit, walltime=walltime,**kwargs)
 
