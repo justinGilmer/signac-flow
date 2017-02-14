@@ -4,7 +4,7 @@
 from __future__ import print_function
 import logging
 
-from .manage import Scheduler
+from .manage import Scheduler, JobStatus
 
 logger = logging.getLogger(__name__)
 
@@ -15,9 +15,11 @@ class FakeScheduler(Scheduler):
         return
         yield
 
-    def submit(self, jobsid, np, walltime, script, *args, **kwargs):
-        logger.info("Fake scheduling of job '{}' on {} procs with "
-                    "a walltime of '{}'.".format(jobsid, np, walltime))
+    def submit(self, script, *args, **kwargs):
+        print('submit', args)
+        for key, value in kwargs.items():
+            if value is not None:
+                print("#FAKE {}={}".format(key, value))
         for line in script:
-            print(line)
-        return jobsid
+            print(line, end='')
+        return JobStatus.submitted
