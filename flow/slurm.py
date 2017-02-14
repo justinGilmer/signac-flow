@@ -4,11 +4,9 @@
 """Routines for the MOAB environment."""
 
 from __future__ import print_function
-import io
 import getpass
 import subprocess
 import tempfile
-import math
 import logging
 
 from .manage import Scheduler
@@ -54,8 +52,10 @@ def _fetch(user=None):
         if info['euser'].startswith(user):
             yield SlurmJob(info['Job_Name'], parse_status(info['job_state']))
 
+
 class SlurmJob(ClusterJob):
     pass
+
 
 class SlurmScheduler(Scheduler):
     submit_cmd = ['sbatch']
@@ -68,19 +68,21 @@ class SlurmScheduler(Scheduler):
         for job in _fetch(user=self.user):
             yield job
 
-    def submit(self, script,
-               resume=None,after=None, pretend=False, hold=False, *args, **kwargs):
+    def submit(self, script, resume=None, after=None,
+               hold=False, pretend=False, **kwargs):
+        submit_cmd = self.submit_cmd
+        if after is not None:
+            submit_cmd.extend(
+                ['-W', 'depend="afterany:{}"'.format(after.split('.')[0])])
+        if hold:
+            submit_cmd += ['--hold']
         if pretend:
-            print("#\n# Pretend to submit:\n")
-            print(script, "\n")
+            print("# Submit command: {}".format('  '.join(submit_cmd)))
+            print(script.read())
+            print()
         else:
-            submit_cmd = self.submit_cmd
-            if after is not None:
-                submit_cmd.extend(
-                    ['-W', 'depend="afterany:{}"'.format(after.split('.')[0])])
             with tempfile.NamedTemporaryFile() as tmp_submit_script:
-                tmp_submit_script.write(submit.encode('utf-8'))
+                tmp_submit_script.write(script.read().encode('utf-8'))
                 tmp_submit_script.flush()
-                output = subprocess.check_output(
-                    submit_cmd + [tmp_submit_script.name])
-            return jobsid
+                subprocess.check_output(submit_cmd + [tmp_submit_script.name])
+                return True

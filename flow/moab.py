@@ -2,8 +2,8 @@
 # All rights reserved.
 # This software is licensed under the BSD 3-Clause License.
 """Routines for the MOAB environment."""
-
 from __future__ import print_function
+import io
 import getpass
 import subprocess
 import tempfile
@@ -27,6 +27,7 @@ def _fetch(user=None):
         raise RuntimeError("Moab not available.")
     tree = ET.parse(source=result)
     return tree.getroot()
+
 
 class MoabJob(ClusterJob):
 
@@ -69,18 +70,19 @@ class MoabScheduler(Scheduler):
 
     def submit(self, script,
                resume=None, after=None, pretend=False, hold=False, *args, **kwargs):
+        submit_cmd = self.submit_cmd
+        if after is not None:
+            submit_cmd.extend(
+                ['-W', 'depend="afterok:{}"'.format(after.split('.')[0])])
+        if hold:
+            submit_cmd += ['-h']
         if pretend:
-            print("#\n# Pretend to submit:\n")
-            print(script, "\n")
+            print("# Submit command: {}".format(' '.join(submit_cmd)))
+            print(script.read())
+            print()
         else:
-            submit_cmd = self.submit_cmd
-            if after is not None:
-                submit_cmd.extend(
-                    ['-W', 'depend="afterok:{}"'.format(after.split('.')[0])])
-            if hold:
-                submit_cmd += ['-h']
             with tempfile.NamedTemporaryFile() as tmp_submit_script:
-                tmp_submit_script.write(script.encode('utf-8'))
+                tmp_submit_script.write(script.read().encode('utf-8'))
                 tmp_submit_script.flush()
                 output = subprocess.check_output(
                     submit_cmd + [tmp_submit_script.name])
