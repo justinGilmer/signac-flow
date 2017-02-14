@@ -56,6 +56,24 @@ def shorten(x, max_length=None):
 def _update_status(args):
     return manage.update_status(* args)
 
+class JobOperation:
+
+    def __init__(self, name, cmd, job):
+        self.name = name
+        self.cmd = cmd
+        self.job = job
+
+    def __str__(self):
+        return self.name
+
+    def get_id(self):
+        return '{}-{}'.format(self.job, self.name)
+
+    def set_status(self, value):
+        "Update the job's status dictionary."
+        status_doc = self.job.document.get('status', dict())
+        status_doc[self.get_id()] = int(value)
+        job.document['status'] = status_doc
 
 class label(object):
 
@@ -309,6 +327,21 @@ class FlowProject(with_metaclass(_FlowProjectClass, signac.contrib.Project)):
         return ((j, jt) for j, jt in to_submit
                 if self._eligible(j, jt, **kwargs))
 
+    def to_submit_cmd(self, job_ids, cmd, requires=None, job_filter=None, **kwargs):
+        if job_ids is None:
+            jobs = list(self.find_jobs(job_filter))
+        else:
+            jobs = [self.open_job(id=jobid) for jobid in job_ids]
+        if requires is None:
+            requires=[];
+        for job in jobs:
+            blocked = len(requires) != 0
+            labels = list(self.labels(job))
+            if blocked:
+                blocked = not all([req in labels for req in requires])
+            if not blocked:
+                print("adding {} with {}".format(job, labels))
+                yield JobOperation(name='user-cmd', cmd=cmd.format(job), job=job)
 
     def _submit(self, scheduler, to_submit, pretend,
                 serial, bundle, after, walltime, **kwargs):
@@ -406,7 +439,7 @@ class FlowProject(with_metaclass(_FlowProjectClass, signac.contrib.Project)):
                 self._submit(scheduler, [ts], walltime=walltime,
                              bundle=bundle, serial=serial, after=after,
                              num=num, pretend=pretend, force=force, **kwargs)
-   
+
     def submit_user(self, env, jobs_to_submit,
                     walltime=None, nn = None, nc = None, ppn = None,
                     bundle=None, serial=False, after=None,
@@ -424,7 +457,7 @@ class FlowProject(with_metaclass(_FlowProjectClass, signac.contrib.Project)):
                 break
 
 
-    def submit(self, env, walltime=None,job_ids=None, operation=None,job_filter=None, force=False, num=None, **kwargs):
+    def submit(self, env, walltime=None,job_ids=None, operation=None,job_filter=None, force=False, num=None, cmd=None, requires=None, **kwargs):
         """Submit jobs to the scheduler.
 
         :param scheduler: The scheduler instance.
@@ -459,11 +492,14 @@ class FlowProject(with_metaclass(_FlowProjectClass, signac.contrib.Project)):
 
         if job_ids is not None and not len(job_ids):
             job_ids = None
-        jobs_to_submit = self.to_submit(job_ids, operation, job_filter)
-        if not force:
-            jobs_to_submit = self.filter_non_eligible(jobs_to_submit, **kwargs)
+
+        if cmd is not None and len(cmd):
+            jobs_to_submit = self.to_submit_cmd(job_ids, cmd, requires, job_filter)
+        else:
+            jobs_to_submit = self.to_submit(job_ids, operation, job_filter)
+            if not force:
+                jobs_to_submit = self.filter_non_eligible(jobs_to_submit, **kwargs)
         jobs_to_submit = islice(jobs_to_submit, num)
-        
         self.submit_user(env, jobs_to_submit, walltime=walltime,**kwargs)
 
 
@@ -524,6 +560,17 @@ class FlowProject(with_metaclass(_FlowProjectClass, signac.contrib.Project)):
             '--hold',
             action='store_true',
             help="Submit job with user hold applied.")
+        parser.add_argument(
+            '--cmd',
+            type=str,
+            help="Submit this command to the scheduler for jobs"
+                 "with lables specified with --requires argument.")
+        parser.add_argument(
+            '--requires',
+            type=str,
+            nargs='*',
+            help="the labels required for the job to be considered eligible used"
+                 "with the --cmd option otherwise it is ignored.")
 
     def write_human_readable_statepoint(self, script, job):
         "Write statepoint of job in human-readable format to script."
