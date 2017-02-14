@@ -105,7 +105,7 @@ class ComputeEnvironment(with_metaclass(ComputeEnvironmentType)):
 
 
 class UnknownEnvironment(ComputeEnvironment):
-    pass
+    scheduler_type = scheduler.FakeScheduler
 
 
 class TestEnvironment(ComputeEnvironment):
