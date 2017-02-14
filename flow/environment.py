@@ -8,7 +8,6 @@ import re
 import socket
 import logging
 import io
-import math
 from signac.common.six import with_metaclass
 from . import scheduler
 from . import manage
@@ -34,45 +33,43 @@ class ComputeEnvironmentType(type):
         return super(ComputeEnvironmentType, cls).__init__(name, bases, dct)
 
 
+class JobScript(io.StringIO):
+    "Simple StringIO wrapper to implement cmd wrapping logic."
+    eol = '\n'
+
+    def __init__(self, parent):
+        self._parent = parent
+        super().__init__()
+
+    def writeline(self, line=''):
+        "Write one line to the job script."
+        self.write(line + self.eol)
+
+    def write_cmd(self, cmd, np=1, bg=True):
+        """Write a command to the jobscript.
+
+        This command wrapper function is a convenience function, which
+        adds mpi and other directives whenever necessary.
+
+        :param cmd: The command to write to the jobscript.
+        :type cmd: str
+        :param np: The number of processors required for execution.
+        :type np: int
+        """
+        if np > 1:
+            cmd = self._parent.mpi_cmd(cmd, np=np)
+        if bg:
+            cmd = self._parent.bg(cmd)
+        self.writeline(cmd)
+
 
 class ComputeEnvironment(with_metaclass(ComputeEnvironmentType)):
-    scheduler=None
+    scheduler = None
     hostname_pattern = None
 
-    class JobScript(io.StringIO):
-        "Simple StringIO wrapper to implement cmd wrapping logic."
-
-        def __init__(self, parent, _id, serial=False, eol='\n'):
-            self._parent = parent
-            self._serial = serial
-            self._eol = eol
-            super().__init__()
-
-        def writeline(self, line):
-            "Write one line to the job script."
-            self.write(line + self._eol)
-
-        def write_cmd(self, cmd, np=1):
-            """Write a command to the jobscript.
-
-            This command wrapper function is a convenience function, which
-            adds mpi and other directives whenever necessary.
-
-            :param cmd: The command to write to the jobscript.
-            :type cmd: str
-            :param np: The number of processors required for execution.
-            :type np: int
-            """
-            if np > 1:
-                cmd = self._parent.mpi_cmd(cmd, np=np)
-            if not self._serial:
-                cmd += ' &'
-            self.writeline(cmd)
-
-        def submit(self, *args, **kwargs):
-            self.writeline('wait')
-            self.seek(0)
-            return self._parent.submit(self, *args, **kwargs)
+    @classmethod
+    def script(cls):
+        return JobScript(cls)
 
     @classmethod
     def is_present(cls):
@@ -89,15 +86,12 @@ class ComputeEnvironment(with_metaclass(ComputeEnvironmentType)):
         except AttributeError:
             raise AttributeError("You must define a scheduler type for every environment")
 
-
     @classmethod
     def submit(cls, script, *args, **kwargs):
         # Hand off the actual submission to the scheduler
-        return cls.get_scheduler().submit(script, *args, **kwargs)
-
-    @classmethod
-    def script(cls, _id, nn=None, np=None, ppn=None, serial=False, **kwargs):
-        return cls.JobScript(cls, _id, serial=serial)
+        script.seek(0)
+        if cls.get_scheduler().submit(script, *args, **kwargs):
+            return manage.JobStatus.submitted
 
     @staticmethod
     def bg(cmd):
