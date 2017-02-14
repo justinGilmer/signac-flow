@@ -4,7 +4,6 @@
 from __future__ import print_function
 import sys
 import os
-import io
 import logging
 import datetime
 import json
@@ -52,7 +51,7 @@ def abbreviate(x, a):
     else:
         abbreviate.table[a] = x
         return a
-abbreviate.table = dict()
+abbreviate.table = dict()  # noqa
 
 
 def shorten(x, max_length=None):
@@ -65,24 +64,6 @@ def shorten(x, max_length=None):
 def _update_status(args):
     return manage.update_status(* args)
 
-class JobOperation:
-
-    def __init__(self, name, cmd, job):
-        self.name = name
-        self.cmd = cmd
-        self.job = job
-
-    def __str__(self):
-        return self.name
-
-    def get_id(self):
-        return '{}-{}'.format(self.job, self.name)
-
-    def set_status(self, value):
-        "Update the job's status dictionary."
-        status_doc = self.job.document.get('status', dict())
-        status_doc[self.get_id()] = int(value)
-        job.document['status'] = status_doc
 
 class label(object):
 
@@ -183,7 +164,7 @@ class FlowProject(with_metaclass(_FlowProjectClass, signac.contrib.Project)):
         active='A',
         inactive='I',
         requires_attention='!'
-        )
+    )
 
     @classmethod
     def _alias(cls, x):
@@ -208,12 +189,12 @@ class FlowProject(with_metaclass(_FlowProjectClass, signac.contrib.Project)):
             return operations[0].get_id()
         else:
             h = '.'.join(op.get_id() for op in operations)
-            bid = '{self}-bundle-{sid}'.format(self=self, sid=sha1(h.encode('utf-8')).hexdigest())
+            bid = '{}-bundle-{}'.format(self, sha1(h.encode('utf-8')).hexdigest())
             fn_bundle = self._fn_bundle(bid)
             _mkdir_p(os.path.dirname(fn_bundle))
             with open(fn_bundle, 'w') as file:
                 for operation in operations:
-                    file.write(operation.get_id()+'\n')
+                    file.write(operation.get_id() + '\n')
             return bid
 
     def _expand_bundled_jobs(self, scheduler_jobs):
@@ -294,27 +275,15 @@ class FlowProject(with_metaclass(_FlowProjectClass, signac.contrib.Project)):
         result['submission_status'] = [manage.JobStatus(highest_status).name]
         return result
 
-    def to_submit_cmd(self, cmd, job_ids=None, requires=None, job_filter=None, **kwargs):
-        assert len(cmd.split('\n')) == 1
-        if job_ids is None:
-            jobs = list(self.find_jobs(job_filter))
-        else:
-            jobs = [self.open_job(id=jobid) for jobid in job_ids]
-        if requires is None:
-            requires=[];
-        for job in jobs:
-            labels = list(self.labels(job))
-            if all([req in labels for req in requires]):
-                yield (JobOperation(name='user-cmd', cmd=cmd.format(job), job=job), 'user-cmd')
-
     def submit_user(self, env, jobs_to_submit,
-                    walltime=None, nn = None, nc = None, ppn = None,
+                    walltime=None, nn=None, nc=None, ppn=None,
                     bundle=None, serial=False, after=None,
                     pretend=False, **kwargs):
         raise NotImplementedError()
 
-    def submit(self, env, job_ids=None, operation_name=None, walltime=None, pretend=False, num=None,
-               force=False, bundle_size=1, serial=False, after=None, hold=False, **kwargs):
+    def submit(self, env, job_ids=None, operation_name=None, walltime=None, pretend=False,
+               num=None, force=False, bundle_size=1, serial=False, after=None, hold=False,
+               cmd=None, requires=None, **kwargs):
         """Submit jobs to the scheduler.
 
         :param env: The env instance.
@@ -347,20 +316,27 @@ class FlowProject(with_metaclass(_FlowProjectClass, signac.contrib.Project)):
         if walltime is not None:
             walltime = datetime.timedelta(hours=walltime)
 
-        if not job_ids:
-            jobs = iter(self)
-        else:
+        if job_ids:
             jobs = [self.open_job(id=_id) for _id in job_ids]
-        operations = (self.next_operation(job) for job in jobs)
+        else:
+            jobs = iter(self)
 
-        def eligible(op):
-            if operation_name is not None and op.name != operation_name:
-                return False
-            if op.get_status() >= manage.JobStatus.submitted:
-                return False
-            return self.eligible(op, **kwargs)
+        if cmd is None:
+            def op(job):
+                op = self.next_operation(job)
+                if operation_name is None or op.name == operation_name:
+                    return op
+        else:
+            def op(job):
+                if requires is not None:
+                    labels = list(self.labels(job))
+                    if not all([req in labels for req in requires]):
+                        return
+                job.ws = job.workspace()  # Extending the job namespace
+                return JobOperation(name='user-cmd', cmd=cmd.format(job=job), job=job)
 
-        operations = (op for op in operations if eligible(op))
+        operations = filter(None, map(op, jobs))
+        operations = (op for op in operations if op.get_status() < manage.JobStatus.submitted)
         operations = islice(operations, num)
 
         for bundle in make_bundles(operations, bundle_size):
@@ -536,7 +512,8 @@ class FlowProject(with_metaclass(_FlowProjectClass, signac.contrib.Project)):
                        skip_active=False, param_max_width=None,
                        file=sys.stdout):
         "Print the project's detailed status."
-        table_header = [self._tr(self._alias(s)) for s in ('job_id', 'status', 'next_operation', 'labels')]
+        table_header = [self._tr(self._alias(s))
+                        for s in ('job_id', 'status', 'next_operation', 'labels')]
         if parameters:
             for i, value in enumerate(parameters):
                 table_header.insert(i + 3, shorten(self._alias(str(value)), param_max_width))
