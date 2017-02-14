@@ -491,7 +491,7 @@ class FlowProject(with_metaclass(_FlowProjectClass, signac.contrib.Project)):
             job_ids = None
 
         if cmd is not None and len(cmd):
-            jobs_to_submit = self.to_submit_cmd(job_ids, cmd, requires, job_filter)
+            jobs_to_submit = self.to_submit_cmd(cmd, job_ids, requires, job_filter)
         else:
             jobs_to_submit = self.to_submit(job_ids, operation, job_filter)
         if not force:
