@@ -70,7 +70,7 @@ class ComputeEnvironment(with_metaclass(ComputeEnvironmentType)):
     hostname_pattern = None
 
     @classmethod
-    def script(cls):
+    def script(cls, **kwargs):
         return JobScript(cls)
 
     @classmethod
