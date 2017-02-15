@@ -47,7 +47,7 @@ class JobScript(io.StringIO):
         "Write one line to the job script."
         self.write(line + self.eol)
 
-    def write_cmd(self, cmd, np=1, bg=True):
+    def write_cmd(self, cmd, np=1, bg=False):
         """Write a command to the jobscript.
 
         This command wrapper function is a convenience function, which
