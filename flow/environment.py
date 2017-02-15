@@ -2,12 +2,14 @@
 # All rights reserved.
 # This software is licensed under the BSD 3-Clause License.
 """Define environments to automate submission scripts."""
-
 from __future__ import print_function
 import re
 import socket
 import logging
 import io
+from collections import OrderedDict
+
+
 from signac.common.six import with_metaclass
 from . import scheduler
 from . import manage
@@ -27,7 +29,7 @@ class ComputeEnvironmentType(type):
 
     def __init__(cls, name, bases, dct):
         if not hasattr(cls, 'registry'):
-            cls.registry = dict()
+            cls.registry = OrderedDict()
         else:
             cls.registry[name] = cls
         return super(ComputeEnvironmentType, cls).__init__(name, bases, dct)
@@ -126,7 +128,7 @@ def get_environment(test=False):
     if test:
         return TestEnvironment
     else:
-        for env_type in ComputeEnvironment.registry.values():
+        for env_type in reversed(ComputeEnvironment.registry.values()):
             if env_type.is_present():
                 return env_type
         else:
