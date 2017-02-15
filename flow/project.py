@@ -116,6 +116,9 @@ class JobOperation:
     def get_id(self):
         return '{}-{}'.format(self.job, self.name)
 
+    def __hash__(self):
+        return int(sha1(self.get_id().encode('utf-8')).hexdigest(), 16)
+
     def __eq__(self, other):
         return self.get_id() == other.get_id()
 
