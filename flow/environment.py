@@ -103,6 +103,13 @@ class ComputeEnvironment(with_metaclass(ComputeEnvironmentType)):
 class UnknownEnvironment(ComputeEnvironment):
     scheduler_type = scheduler.FakeScheduler
 
+    @classmethod
+    def script(cls, **kwargs):
+        js = super(UnknownEnvironment, cls).script(**kwargs)
+        for key in sorted(kwargs):
+            js.writeline('#TEST {}={}'.format(key, kwargs[key]))
+        return js
+
 
 class TestEnvironment(ComputeEnvironment):
     scheduler_type = scheduler.FakeScheduler

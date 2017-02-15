@@ -16,10 +16,6 @@ class FakeScheduler(Scheduler):
         yield
 
     def submit(self, script, *args, **kwargs):
-        print('submit', args)
-        for key, value in kwargs.items():
-            if value is not None:
-                print("#FAKE {}={}".format(key, value))
-        for line in script:
-            print(line, end='')
-        return JobStatus.submitted
+        fake_cmd = ' '.join('--{}{}'.format(k, '' if v is True else v) for k, v in kwargs.items())
+        print("# Submit command: testsub {}".format(fake_cmd))
+        print(script.read())
