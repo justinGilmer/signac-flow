@@ -119,16 +119,21 @@ class MoabEnvironment(ComputeEnvironment):
     scheduler_type = scheduler.MoabScheduler
 
 
+class DefaultMoabEnvironment(MoabEnvironment):
+
+    @classmethod
+    def is_present(cls):
+        return cls.scheduler_type.is_present()
+
 class SlurmEnvironment(ComputeEnvironment):
     scheduler_type = scheduler.SlurmScheduler
 
 
-class CPUEnvironment(ComputeEnvironment):
-    pass
+class DefaultSlurmEnvironment(SlurmEnvironment):
 
-
-class GPUEnvironment(ComputeEnvironment):
-    pass
+    @classmethod
+    def is_present(cls):
+        return cls.scheduler_type.is_present()
 
 
 def get_environment(test=False):

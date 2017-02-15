@@ -88,3 +88,12 @@ class MoabScheduler(Scheduler):
                     submit_cmd + [tmp_submit_script.name])
             jobsid = output.decode('utf-8').strip()
             return jobsid
+
+    @classmethod
+    def is_present(cls):
+        try:
+            subprocess.check_call(['qsub', '--version'])
+        except IOError:
+            return False
+        else:
+            return True
