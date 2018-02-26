@@ -32,6 +32,7 @@ from hashlib import sha1
 from math import ceil
 from multiprocessing import Pool
 from multiprocessing import TimeoutError
+from contextlib import contextmanager
 
 import signac
 from signac.common import six
@@ -120,6 +121,17 @@ def shorten(x, max_length=None):
 
 def _update_status(args):
     return manage.update_status(* args)
+
+
+@contextmanager
+def _enable_global_buffer():
+    try:
+        with signac.buffered():
+            yield
+    except AttributeError:
+        logger.debug("Global buffer mode not supported in "
+                     "signac version {}.".format(signac.__version__))
+        yield
 
 
 class label(object):
@@ -959,12 +971,13 @@ class FlowProject(with_metaclass(_FlowProjectClass, signac.contrib.Project)):
             else:
                 raise RuntimeError("Error while querying scheduler: '{}'.".format(e))
         print(self._tr("Determine job stati..."), file=file)
-        if pool is None:
-            for job in tqdm(jobs, file=file):
-                self._update_status(job, sjobs_map)
-        else:
-            jobs_ = ((job, sjobs_map) for job in jobs)
-            pool.map(_update_status, tqdm(jobs_, total=len(jobs), file=file))
+        with _enable_global_buffer():
+            if pool is None:
+                for job in tqdm(jobs, file=file):
+                    self._update_status(job, sjobs_map)
+            else:
+                jobs_ = ((job, sjobs_map) for job in jobs)
+                pool.map(_update_status, tqdm(jobs_, total=len(jobs), file=file))
 
     def print_status(self, scheduler=None, job_filter=None,
                      overview=True, overview_max_lines=None,
@@ -996,25 +1009,26 @@ class FlowProject(with_metaclass(_FlowProjectClass, signac.contrib.Project)):
             defaults to sys.stderr
         :param pool: A multiprocessing or threading pool. Providing a pool
             parallelizes this method."""
-        if job_filter is not None and isinstance(job_filter, str):
-            job_filter = json.loads(job_filter)
-        jobs = list(self.find_jobs(job_filter))
-        if scheduler is not None:
-            self.update_stati(scheduler, jobs, file=err, pool=pool, ignore_errors=ignore_errors)
-        print(self._tr("Generate output..."), file=err)
-        if pool is None:
-            stati = [self.get_job_status(job) for job in jobs]
-        else:
-            stati = list(pool.map(self.get_job_status, jobs))
-        title = "{} '{}':".format(self._tr("Status project"), self)
-        print('\n' + title, file=file)
-        if overview:
-            self._print_overview(stati, max_lines=overview_max_lines, file=file)
-        if detailed:
-            print(file=file)
-            print(self._tr("Detailed view:"), file=file)
-            self._print_detailed(stati, parameters, skip_active,
-                                 param_max_width, file)
+        with _enable_global_buffer():
+            if job_filter is not None and isinstance(job_filter, str):
+                job_filter = json.loads(job_filter)
+            jobs = list(self.find_jobs(job_filter))
+            if scheduler is not None:
+                self.update_stati(scheduler, jobs, file=err, pool=pool, ignore_errors=ignore_errors)
+            print(self._tr("Generate output..."), file=err)
+            if pool is None:
+                stati = [self.get_job_status(job) for job in jobs]
+            else:
+                stati = list(pool.map(self.get_job_status, jobs))
+            title = "{} '{}':".format(self._tr("Status project"), self)
+            print('\n' + title, file=file)
+            if overview:
+                self._print_overview(stati, max_lines=overview_max_lines, file=file)
+            if detailed:
+                print(file=file)
+                print(self._tr("Detailed view:"), file=file)
+                self._print_detailed(stati, parameters, skip_active,
+                                     param_max_width, file)
 
     @classmethod
     def add_print_status_args(cls, parser):
