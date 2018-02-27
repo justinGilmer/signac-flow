@@ -124,12 +124,12 @@ def _update_status(args):
 
 
 @contextmanager
-def _enable_global_buffer():
+def _buffered():
     try:
         with signac.buffered():
             yield
     except AttributeError:
-        logger.debug("Global buffer mode not supported in "
+        logger.debug("Global buffered mode not supported in "
                      "signac version {}.".format(signac.__version__))
         yield
 
@@ -971,7 +971,7 @@ class FlowProject(with_metaclass(_FlowProjectClass, signac.contrib.Project)):
             else:
                 raise RuntimeError("Error while querying scheduler: '{}'.".format(e))
         print(self._tr("Determine job stati..."), file=file)
-        with _enable_global_buffer():
+        with _buffered():
             if pool is None:
                 for job in tqdm(jobs, file=file):
                     self._update_status(job, sjobs_map)
@@ -1009,7 +1009,7 @@ class FlowProject(with_metaclass(_FlowProjectClass, signac.contrib.Project)):
             defaults to sys.stderr
         :param pool: A multiprocessing or threading pool. Providing a pool
             parallelizes this method."""
-        with _enable_global_buffer():
+        with _buffered():
             if job_filter is not None and isinstance(job_filter, str):
                 job_filter = json.loads(job_filter)
             jobs = list(self.find_jobs(job_filter))
