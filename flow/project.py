@@ -363,7 +363,7 @@ class JobOperation(object):
         try:
             self.set_status(JobStatus.active)
             yield self
-        except:
+        except Exception:
             self.set_status(JobStatus.error)
             raise
         else:
