@@ -36,6 +36,7 @@ from multiprocessing import cpu_count
 from multiprocessing import TimeoutError
 from multiprocessing.pool import ThreadPool
 from multiprocessing import Event
+from contextlib import contextmanager
 
 import signac
 from signac.common import six
@@ -344,6 +345,7 @@ class JobOperation(object):
 
     def set_status(self, value):
         "Store the operation's status."
+        logger.info("Set status for '{}': '{}'.".format(self, value.name))
         status_doc = self.job.document.get('_status', dict())
         status_doc[self.get_id()] = int(value)
         self.job.document['_status'] = status_doc
@@ -355,6 +357,17 @@ class JobOperation(object):
             return JobStatus(status_cache[self.get_id()])
         except KeyError:
             return JobStatus.unknown
+
+    @contextmanager
+    def set_active(self, timeout=None):
+        try:
+            self.set_status(JobStatus.active)
+            yield self
+        except:
+            self.set_status(JobStatus.error)
+            raise
+        else:
+            self.set_status(JobStatus.inactive)
 
 
 class FlowCondition(object):
@@ -1537,13 +1550,14 @@ class FlowProject(six.with_metaclass(_FlowProjectClass, signac.contrib.Project))
     def _fork(self, operation, timeout=None):
         logger.info("Execute operation '{}'...".format(operation))
 
-        # Execute without forking if possible...
-        if timeout is None and operation.name in self._operation_functions and \
-                operation.directives.get('executable', sys.executable) == sys.executable:
-            logger.debug("Able to optimize execution of operation '{}'.".format(operation))
-            self._operation_functions[operation.name](operation.job)
-        else:   # need to fork
-            fork(cmd=operation.cmd, timeout=timeout)
+        with operation.set_active():
+            # Execute without forking if possible...
+            if timeout is None and operation.name in self._operation_functions and \
+                    operation.directives.get('executable', sys.executable) == sys.executable:
+                logger.debug("Able to optimize execution of operation '{}'.".format(operation))
+                self._operation_functions[operation.name](operation.job)
+            else:   # need to fork
+                    fork(cmd=operation.cmd, timeout=timeout)
 
     @_support_legacy_api
     def run(self, jobs=None, names=None, pretend=False, np=None, timeout=None, num=None,
